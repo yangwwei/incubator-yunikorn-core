@@ -23,20 +23,21 @@ import (
 
 // All core metrics variables to be declared in this struct
 type SchedulerMetrics struct  {
-	allocations                 *prometheus.CounterVec
-	allocatedContainers prometheus.Counter
-	rejectedContainers  prometheus.Counter
-	schedulingErrors    prometheus.Counter
-	releasedContainers  prometheus.Counter
-	scheduleApplications        *prometheus.CounterVec
-	totalApplicationsAdded      prometheus.Counter
-	totalApplicationsRejected   prometheus.Counter
-	totalApplicationsRunning    prometheus.Gauge
-	totalApplicationsCompleted  prometheus.Gauge
-	activeNodes                 prometheus.Gauge
-	failedNodes                 prometheus.Gauge
-	schedulingLatency           prometheus.Histogram
-	nodeSortingLatency          prometheus.Histogram
+	allocations                *prometheus.CounterVec
+	allocatedContainers        prometheus.Counter
+	rejectedContainers         prometheus.Counter
+	schedulingErrors           prometheus.Counter
+	releasedContainers         prometheus.Counter
+	scheduleApplications       *prometheus.CounterVec
+	totalApplicationsAdded     prometheus.Counter
+	totalApplicationsRejected  prometheus.Counter
+	totalApplicationsRunning   prometheus.Gauge
+	totalApplicationsCompleted prometheus.Gauge
+	activeNodes                prometheus.Gauge
+	failedNodes                prometheus.Gauge
+	nodesMemoryUsage           *prometheus.GaugeVec
+	schedulingLatency          prometheus.Histogram
+	nodeSortingLatency         prometheus.Histogram
 }
 
 // Initialize scheduler metrics
@@ -98,6 +99,13 @@ func initSchedulerMetrics() *SchedulerMetrics {
 			Name:      "failed_nodes",
 			Help:      "failed nodes",
 		})
+	s.nodesMemoryUsage = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace:   Namespace,
+			Subsystem:   SchedulerSubsystem,
+			Name:        "nodes_usage",
+			Help:        "Nodes resource usage",
+		}, []string{"node"})
 
 	s.schedulingLatency = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
@@ -127,6 +135,7 @@ func initSchedulerMetrics() *SchedulerMetrics {
 		s.totalApplicationsCompleted,
 		s.activeNodes,
 		s.failedNodes,
+		s.nodesMemoryUsage,
 	}
 
 	// Register the metrics.
@@ -296,4 +305,8 @@ func (m *SchedulerMetrics) SubFailedNodes(value int) {
 
 func (m *SchedulerMetrics) SetFailedNodes(value int) {
 	m.failedNodes.Set(float64(value))
+}
+
+func (m *SchedulerMetrics) SetNodeMemoryUsage(nodeName string, value float64) {
+	m.nodesMemoryUsage.With(prometheus.Labels{"node": nodeName}).Set(value)
 }
