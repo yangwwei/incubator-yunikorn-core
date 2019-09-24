@@ -110,9 +110,9 @@ func (m *Scheduler) internalSchedule() {
         })
 
         for _, p := range m.clusterSchedulingContext.partitions {
-            usageMap := p.partition.CalculateAllNodesUsageMap()
-            for k,v := range usageMap {
-                metrics.GetSchedulerMetrics().SetNodeResourceUsage(k, v)
+            usageSlice := p.partition.CalculateAllNodesUsageMap()
+            for k,v := range usageSlice {
+                metrics.GetSchedulerMetrics().SetNodeResourceUsage(k, float64(v))
             }
         }
     }

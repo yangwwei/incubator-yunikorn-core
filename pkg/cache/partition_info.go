@@ -895,15 +895,18 @@ func (pi *PartitionInfo) convertUGI(ugi *si.UserGroupInformation) (security.User
     return pi.userGroupCache.ConvertUGI(ugi)
 }
 
-func (pi *PartitionInfo) CalculateAllNodesUsageMap() map[int]float64 {
+func (pi *PartitionInfo) CalculateAllNodesUsageMap() []int {
+    pi.lock.RLock()
+    defer pi.lock.RUnlock()
     // 0: 0%->10%
     // 1: 10% -> 20%
-    result := make(map[int]float64)
+    result := make([]int, len(pi.nodes))
     for _, node := range pi.nodes {
         memoryTotal := float64(node.TotalResource.Resources["memory"])
         memoryAllocated := float64(node.allocatedResource.Resources["memory"])
         v := memoryAllocated/memoryTotal
-        result[int(math.Dim(math.Ceil(v*10), 1))] = v
+        idx := int(math.Dim(math.Ceil(v*10), 1))
+        result[idx]++
     }
     return result
 }
