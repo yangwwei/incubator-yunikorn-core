@@ -109,7 +109,7 @@ func (m *Scheduler) internalSchedule() {
             blacklistedRequest: make(map[string]bool),
         })
 
-        for _, p := range m.clusterSchedulingContext.partitions {
+        for _, p := range m.GetClusterSchedulingContext().getPartitionMapClone() {
             usageSlice := p.partition.CalculateAllNodesUsageMap()
             for k,v := range usageSlice {
                 metrics.GetSchedulerMetrics().SetNodeResourceUsage(k, float64(v))
