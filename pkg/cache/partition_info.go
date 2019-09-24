@@ -29,6 +29,7 @@ import (
     "github.com/looplab/fsm"
     "github.com/satori/go.uuid"
     "go.uber.org/zap"
+    "math"
     "strings"
     "sync"
     "time"
@@ -892,4 +893,17 @@ func (pi *PartitionInfo) convertUGI(ugi *si.UserGroupInformation) (security.User
     pi.lock.RLock()
     defer pi.lock.RUnlock()
     return pi.userGroupCache.ConvertUGI(ugi)
+}
+
+func (pi *PartitionInfo) CalculateAllNodesUsageMap() map[int]float64 {
+    // 0: 0%->10%
+    // 1: 10% -> 20%
+    result := make(map[int]float64)
+    for _, node := range pi.nodes {
+        memoryTotal := float64(node.TotalResource.Resources["memory"])
+        memoryAllocated := float64(node.allocatedResource.Resources["memory"])
+        v := memoryAllocated/memoryTotal
+        result[int(math.Dim(math.Ceil(v*10), 1))] = v
+    }
+    return result
 }

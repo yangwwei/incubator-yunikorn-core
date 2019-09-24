@@ -25,6 +25,7 @@ import (
     "github.com/cloudera/yunikorn-core/pkg/common/resources"
     "github.com/cloudera/yunikorn-core/pkg/handler"
     "github.com/cloudera/yunikorn-core/pkg/log"
+    "github.com/cloudera/yunikorn-core/pkg/metrics"
     "github.com/cloudera/yunikorn-core/pkg/plugins"
     "github.com/cloudera/yunikorn-core/pkg/rmproxy/rmevent"
     "github.com/cloudera/yunikorn-core/pkg/scheduler/schedulerevent"
@@ -107,6 +108,13 @@ func (m *Scheduler) internalSchedule() {
             crossQueuePreemption: false,
             blacklistedRequest: make(map[string]bool),
         })
+
+        for _, p := range m.clusterSchedulingContext.partitions {
+            usageMap := p.partition.CalculateAllNodesUsageMap()
+            for k,v := range usageMap {
+                metrics.GetSchedulerMetrics().SetNodeResourceUsage(k, v)
+            }
+        }
     }
 }
 

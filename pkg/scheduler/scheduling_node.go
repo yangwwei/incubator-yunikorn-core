@@ -20,7 +20,6 @@ import (
 	"github.com/cloudera/yunikorn-core/pkg/cache"
 	"github.com/cloudera/yunikorn-core/pkg/common/resources"
 	"github.com/cloudera/yunikorn-core/pkg/log"
-	"github.com/cloudera/yunikorn-core/pkg/metrics"
 	"github.com/cloudera/yunikorn-core/pkg/plugins"
 	"github.com/cloudera/yunikorn-scheduler-interface/lib/go/si"
 	"go.uber.org/zap"
@@ -61,8 +60,6 @@ func (m *SchedulingNode) CheckAndAllocateResource(delta *resources.Resource, pre
 
 	if resources.FitIn(avail, newAllocating) {
 		m.AllocatingResource = newAllocating
-		metrics.GetSchedulerMetrics().SetNodeMemoryUsage(string(m.NodeId),
-			float64(newAllocating.Resources["memory"]))
 		return true
 	}
 	return false

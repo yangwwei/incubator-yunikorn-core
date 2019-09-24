@@ -35,7 +35,7 @@ type SchedulerMetrics struct  {
 	totalApplicationsCompleted prometheus.Gauge
 	activeNodes                prometheus.Gauge
 	failedNodes                prometheus.Gauge
-	nodesMemoryUsage           *prometheus.GaugeVec
+	nodesResourceUsage         *prometheus.GaugeVec
 	schedulingLatency          prometheus.Histogram
 	nodeSortingLatency         prometheus.Histogram
 }
@@ -99,13 +99,13 @@ func initSchedulerMetrics() *SchedulerMetrics {
 			Name:      "failed_nodes",
 			Help:      "failed nodes",
 		})
-	s.nodesMemoryUsage = prometheus.NewGaugeVec(
+	s.nodesResourceUsage = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace:   Namespace,
 			Subsystem:   SchedulerSubsystem,
 			Name:        "nodes_usage",
-			Help:        "Nodes resource usage",
-		}, []string{"node"})
+			Help:        "Nodes resource usage, by resource name.",
+		}, []string{"range"})
 
 	s.schedulingLatency = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
@@ -135,7 +135,7 @@ func initSchedulerMetrics() *SchedulerMetrics {
 		s.totalApplicationsCompleted,
 		s.activeNodes,
 		s.failedNodes,
-		s.nodesMemoryUsage,
+		s.nodesResourceUsage,
 	}
 
 	// Register the metrics.
@@ -307,6 +307,18 @@ func (m *SchedulerMetrics) SetFailedNodes(value int) {
 	m.failedNodes.Set(float64(value))
 }
 
-func (m *SchedulerMetrics) SetNodeMemoryUsage(nodeName string, value float64) {
-	m.nodesMemoryUsage.With(prometheus.Labels{"node": nodeName}).Set(value)
+func (m *SchedulerMetrics) SetNodeResourceUsage(rangeIdx int, value float64) {
+	mmm := []string{
+		"[0,10%]",
+		"(10%, 20%]",
+		"(20%,30%]",
+		"(30%,40%]",
+		"(40%,50%]",
+		"(50%,60%]",
+		"(60%,70%]",
+		"(70%,80%]",
+		"(80%,90%]",
+		"(90%,100%]",
+	}
+	m.nodesResourceUsage.With(prometheus.Labels{"range": mmm[rangeIdx]}).Set(value)
 }
