@@ -901,9 +901,11 @@ func (pi *PartitionInfo) CalculateAllNodesUsageMap() []int {
     // 0: 0%->10%
     // 1: 10% -> 20%
     result := make([]int, len(pi.nodes))
-    i := 0
-    for _, node := range pi.nodes {
+    for i := range result {
         result[i] = 0
+    }
+
+    for _, node := range pi.nodes {
         memoryTotal := float64(node.TotalResource.Resources["memory"])
         memoryAllocated := float64(node.allocatedResource.Resources["memory"])
         v := memoryAllocated/memoryTotal
@@ -913,7 +915,6 @@ func (pi *PartitionInfo) CalculateAllNodesUsageMap() []int {
         idx := int(math.Dim(math.Ceil(v*10), 1))
         log.Logger().Info("####", zap.Int("idx", idx))
         result[idx]++
-        i++
     }
     return result
 }
