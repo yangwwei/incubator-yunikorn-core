@@ -21,6 +21,7 @@ import (
 	"github.com/cloudera/yunikorn-core/pkg/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
+	"strings"
 	"sync"
 	"time"
 )
@@ -330,18 +331,19 @@ func (m *SchedulerMetrics) SetNodeResourceUsage(resourceName string, rangeIdx in
 	var resourceMetrics *prometheus.GaugeVec
 	resourceMetrics, ok := m.nodesResourceUsages[resourceName]
 	if !ok {
+		metricsName := strings.Replace(fmt.Sprintf("%s_nodes_usage", resourceName), "-", "_", -1)
 		resourceMetrics = prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace:   Namespace,
 				Subsystem:   SchedulerSubsystem,
-				Name:        fmt.Sprintf("%s_nodes_usage", resourceName),
+				Name:        metricsName,
 				Help:        "Nodes resource usage, by resource name.",
 			}, []string{"range"})
-
 		if err := prometheus.Register(resourceMetrics); err != nil {
 			log.Logger().Warn("failed to register metrics collector", zap.Error(err))
 			return
 		}
+		m.nodesResourceUsages[resourceName] = resourceMetrics
 	}
 	resourceMetrics.With(prometheus.Labels{"range": resourceUsageRangeBuckets[rangeIdx]}).Set(value)
 }
