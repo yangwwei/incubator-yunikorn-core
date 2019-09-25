@@ -17,9 +17,26 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
+	"github.com/cloudera/yunikorn-core/pkg/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
+	"sync"
 	"time"
 )
+
+var resourceUsageRangeBuckets = []string{
+	"[0,10%]",
+	"(10%, 20%]",
+	"(20%,30%]",
+	"(30%,40%]",
+	"(40%,50%]",
+	"(50%,60%]",
+	"(60%,70%]",
+	"(70%,80%]",
+	"(80%,90%]",
+	"(90%,100%]",
+}
 
 // All core metrics variables to be declared in this struct
 type SchedulerMetrics struct  {
@@ -35,14 +52,20 @@ type SchedulerMetrics struct  {
 	totalApplicationsCompleted prometheus.Gauge
 	activeNodes                prometheus.Gauge
 	failedNodes                prometheus.Gauge
-	nodesResourceUsage         *prometheus.GaugeVec
+	nodesResourceUsages        map[string]*prometheus.GaugeVec
 	schedulingLatency          prometheus.Histogram
 	nodeSortingLatency         prometheus.Histogram
+	lock                       sync.RWMutex
 }
 
 // Initialize scheduler metrics
 func initSchedulerMetrics() *SchedulerMetrics {
-	s := &SchedulerMetrics{}
+	s := &SchedulerMetrics{
+		lock: sync.RWMutex{},
+	}
+
+	// this map might be updated at runtime
+	s.nodesResourceUsages = make(map[string]*prometheus.GaugeVec)
 
 	// containers
 	s.allocations = prometheus.NewCounterVec(
@@ -99,13 +122,6 @@ func initSchedulerMetrics() *SchedulerMetrics {
 			Name:      "failed_nodes",
 			Help:      "failed nodes",
 		})
-	s.nodesResourceUsage = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace:   Namespace,
-			Subsystem:   SchedulerSubsystem,
-			Name:        "nodes_usage",
-			Help:        "Nodes resource usage, by resource name.",
-		}, []string{"range"})
 
 	s.schedulingLatency = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
@@ -135,12 +151,13 @@ func initSchedulerMetrics() *SchedulerMetrics {
 		s.totalApplicationsCompleted,
 		s.activeNodes,
 		s.failedNodes,
-		s.nodesResourceUsage,
 	}
 
 	// Register the metrics.
 	for _, metric := range metricsList {
-		prometheus.MustRegister(metric)
+		if err:= prometheus.Register(metric); err != nil {
+			log.Logger().Warn("failed to register metrics collector", zap.Error(err))
+		}
 	}
 
 	return s
@@ -307,18 +324,24 @@ func (m *SchedulerMetrics) SetFailedNodes(value int) {
 	m.failedNodes.Set(float64(value))
 }
 
-func (m *SchedulerMetrics) SetNodeResourceUsage(rangeIdx int, value float64) {
-	mmm := []string{
-		"[0,10%]",
-		"(10%, 20%]",
-		"(20%,30%]",
-		"(30%,40%]",
-		"(40%,50%]",
-		"(50%,60%]",
-		"(60%,70%]",
-		"(70%,80%]",
-		"(80%,90%]",
-		"(90%,100%]",
+func (m *SchedulerMetrics) SetNodeResourceUsage(resourceName string, rangeIdx int, value float64) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	var resourceMetrics *prometheus.GaugeVec
+	resourceMetrics, ok := m.nodesResourceUsages[resourceName]
+	if !ok {
+		resourceMetrics = prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace:   Namespace,
+				Subsystem:   SchedulerSubsystem,
+				Name:        fmt.Sprintf("%s_nodes_usage", resourceName),
+				Help:        "Nodes resource usage, by resource name.",
+			}, []string{"range"})
+
+		if err := prometheus.Register(resourceMetrics); err != nil {
+			log.Logger().Warn("failed to register metrics collector", zap.Error(err))
+			return
+		}
 	}
-	m.nodesResourceUsage.With(prometheus.Labels{"range": mmm[rangeIdx]}).Set(value)
+	resourceMetrics.With(prometheus.Labels{"range": resourceUsageRangeBuckets[rangeIdx]}).Set(value)
 }

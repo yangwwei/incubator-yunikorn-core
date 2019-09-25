@@ -109,10 +109,15 @@ func (m *Scheduler) internalSchedule() {
             blacklistedRequest: make(map[string]bool),
         })
 
+        // TODO move this to a separate monitoring service (avoid perf regression)
         for _, p := range m.GetClusterSchedulingContext().getPartitionMapClone() {
-            usageSlice := p.partition.CalculateAllNodesUsageMap()
-            for k,v := range usageSlice {
-                metrics.GetSchedulerMetrics().SetNodeResourceUsage(k, float64(v))
+            usageMap := p.partition.CalculateNodesResourceUsage()
+            if usageMap != nil && len(usageMap) > 0 {
+                for resourceName, usageBuckets := range usageMap {
+                    for idx, bucketValue := range usageBuckets {
+                        metrics.GetSchedulerMetrics().SetNodeResourceUsage(resourceName, idx, float64(bucketValue))
+                    }
+                }
             }
         }
     }

@@ -895,26 +895,36 @@ func (pi *PartitionInfo) convertUGI(ugi *si.UserGroupInformation) (security.User
     return pi.userGroupCache.ConvertUGI(ugi)
 }
 
-func (pi *PartitionInfo) CalculateAllNodesUsageMap() []int {
+func (pi *PartitionInfo) CalculateNodesResourceUsage() map[string][]int {
     pi.lock.RLock()
     defer pi.lock.RUnlock()
-    // 0: 0%->10%
-    // 1: 10% -> 20%
-    result := make([]int, len(pi.nodes))
-    for i := range result {
-        result[i] = 0
-    }
-
+    mapResult := make(map[string][]int)
     for _, node := range pi.nodes {
-        memoryTotal := float64(node.TotalResource.Resources["memory"])
-        memoryAllocated := float64(node.allocatedResource.Resources["memory"])
-        v := memoryAllocated/memoryTotal
-        log.Logger().Info("####", zap.Float64("alloc", memoryAllocated))
-        log.Logger().Info("####", zap.Float64("total", memoryTotal))
-        log.Logger().Info("####", zap.Float64("p", v))
-        idx := int(math.Dim(math.Ceil(v*10), 1))
-        log.Logger().Info("####", zap.Int("idx", idx))
-        result[idx]++
+        for name, total := range node.TotalResource.Resources {
+            resourceAllocated := float64(node.allocatedResource.Resources[name])
+            v := resourceAllocated/float64(total)
+            idx := int(math.Dim(math.Ceil(v*10), 1))
+            if dist, ok := mapResult[name]; !ok {
+                // for each resource type, we create a slice with 10 elements,
+                // each index represents a range of resource usage,
+                // such as
+                //   0: 0%->10%
+                //   1: 10% -> 20%
+                //   ...
+                //   9: 90% -> 100%
+                // the value represents number of nodes fall into this bucket.
+                // if slice[9] = 3, this means there are 3 nodes resource usage is in the range 80% to 90%.
+                newDist := make([]int, 10)
+                for i := range newDist {
+                    newDist[i] = 0
+                }
+                mapResult[name] = newDist
+                mapResult[name][idx]++
+            } else {
+                dist[idx]++
+            }
+        }
+
     }
-    return result
+    return mapResult
 }

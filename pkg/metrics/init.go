@@ -98,7 +98,7 @@ type CoreSchedulerMetrics interface {
 	DecFailedNodes()
 	SubFailedNodes(value int)
 	SetFailedNodes(value int)
-	SetNodeResourceUsage(rangeIdx int, value float64)
+	SetNodeResourceUsage(resourceName string, rangeIdx int, value float64)
 
 	//latency change
 	ObserveSchedulingLatency(start time.Time)
