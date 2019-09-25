@@ -918,6 +918,7 @@ func (pi *PartitionInfo) CalculateNodesResourceUsage() map[string][]int {
                 for i := range newDist {
                     newDist[i] = 0
                 }
+                log.Logger().Info("####", zap.Int("idx", idx), zap.String("name", name), zap.Float64("v", v))
                 mapResult[name] = newDist
                 mapResult[name][idx]++
             } else {
