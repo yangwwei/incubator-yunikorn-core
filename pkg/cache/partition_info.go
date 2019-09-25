@@ -895,6 +895,17 @@ func (pi *PartitionInfo) convertUGI(ugi *si.UserGroupInformation) (security.User
     return pi.userGroupCache.ConvertUGI(ugi)
 }
 
+// calculate overall nodes resource usage and returns a map as the result,
+// where the key is the resource name, e.g memory, and the value is a []int,
+// which is a slice with 10 elements,
+// each element represents a range of resource usage,
+// such as
+//   0: 0%->10%
+//   1: 10% -> 20%
+//   ...
+//   9: 90% -> 100%
+// the element value represents number of nodes fall into this bucket.
+// if slice[9] = 3, this means there are 3 nodes resource usage is in the range 80% to 90%.
 func (pi *PartitionInfo) CalculateNodesResourceUsage() map[string][]int {
     pi.lock.RLock()
     defer pi.lock.RUnlock()
@@ -906,20 +917,10 @@ func (pi *PartitionInfo) CalculateNodesResourceUsage() map[string][]int {
                 v := resourceAllocated/float64(total)
                 idx := int(math.Dim(math.Ceil(v*10), 1))
                 if dist, ok := mapResult[name]; !ok {
-                    // for each resource type, we create a slice with 10 elements,
-                    // each index represents a range of resource usage,
-                    // such as
-                    //   0: 0%->10%
-                    //   1: 10% -> 20%
-                    //   ...
-                    //   9: 90% -> 100%
-                    // the value represents number of nodes fall into this bucket.
-                    // if slice[9] = 3, this means there are 3 nodes resource usage is in the range 80% to 90%.
                     newDist := make([]int, 10)
                     for i := range newDist {
                         newDist[i] = 0
                     }
-                    log.Logger().Info("####", zap.Int("idx", idx), zap.String("name", name), zap.Float64("v", v))
                     mapResult[name] = newDist
                     mapResult[name][idx]++
                 } else {
@@ -927,7 +928,6 @@ func (pi *PartitionInfo) CalculateNodesResourceUsage() map[string][]int {
                 }
             }
         }
-
     }
     return mapResult
 }

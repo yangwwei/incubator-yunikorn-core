@@ -25,7 +25,6 @@ import (
     "github.com/cloudera/yunikorn-core/pkg/common/resources"
     "github.com/cloudera/yunikorn-core/pkg/handler"
     "github.com/cloudera/yunikorn-core/pkg/log"
-    "github.com/cloudera/yunikorn-core/pkg/metrics"
     "github.com/cloudera/yunikorn-core/pkg/plugins"
     "github.com/cloudera/yunikorn-core/pkg/rmproxy/rmevent"
     "github.com/cloudera/yunikorn-core/pkg/scheduler/schedulerevent"
@@ -76,6 +75,10 @@ func (m *Scheduler) StartService(handlers handler.EventHandlers, manualSchedule 
     // Start event handlers
     go m.handleSchedulerEvent()
 
+    // Start resource monitor if necessary (majorly for testing)
+    monitor := newNodesResourceUsageMonitor(m)
+    monitor.start()
+
     if !manualSchedule {
         go m.internalSchedule()
         go m.internalPreemption()
@@ -108,18 +111,6 @@ func (m *Scheduler) internalSchedule() {
             crossQueuePreemption: false,
             blacklistedRequest: make(map[string]bool),
         })
-
-        // TODO move this to a separate monitoring service (avoid perf regression)
-        for _, p := range m.GetClusterSchedulingContext().getPartitionMapClone() {
-            usageMap := p.partition.CalculateNodesResourceUsage()
-            if usageMap != nil && len(usageMap) > 0 {
-                for resourceName, usageBuckets := range usageMap {
-                    for idx, bucketValue := range usageBuckets {
-                        metrics.GetSchedulerMetrics().SetNodeResourceUsage(resourceName, idx, float64(bucketValue))
-                    }
-                }
-            }
-        }
     }
 }
 
