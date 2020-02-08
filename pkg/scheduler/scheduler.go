@@ -84,17 +84,17 @@ func (m *Scheduler) StartService(handlers handler.EventHandlers, manualSchedule 
 	monitor.start()
 
 	if !manualSchedule {
-		ticker := time.NewTicker(3 * time.Second)
-		go func() {
-			for {
-				select {
-				case t := <-ticker.C:
-					log.Logger().Info("computing scale",
-						zap.Any("@", t))
-					m.computeScale()
-				}
-			}
-		}()
+		// ticker := time.NewTicker(3 * time.Second)
+		// go func() {
+		// 	for {
+		// 		select {
+		// 		case t := <-ticker.C:
+		// 			log.Logger().Info("computing scale",
+		// 				zap.Any("@", t))
+		// 			m.computeScale()
+		// 		}
+		// 	}
+		// }()
 		go m.internalSchedule()
 		go m.internalPreemption()
 	}
@@ -121,11 +121,18 @@ func newSingleAllocationProposal(alloc *SchedulingAllocation) *cacheevent.Alloca
 
 // Internal start scheduling service
 func (m *Scheduler) internalSchedule() {
+	start := time.Now()
 	for {
 		m.singleStepSchedule(16, &preemptionParameters{
 			crossQueuePreemption: false,
 			blacklistedRequest:   make(map[string]bool),
 		})
+
+
+		if time.Since(start) > 3 * time.Second {
+			m.computeScale()
+			start = time.Now()
+		}
 	}
 }
 
