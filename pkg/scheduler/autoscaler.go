@@ -40,11 +40,12 @@ func (m *Scheduler) computeScale() *resources.Resource {
 		totalDesire := resources.NewResource()
 		computeQueueDesire(totalPartitionResource,
 			partitionContext.Root, nil, nil, totalDesire)
-		log.Logger().Info("auto-scaling-adviser",
-			zap.String("resources", totalDesire.String()))
 
 		clusterTotal.AddTo(totalDesire)
 	}
+
+	log.Logger().Info("auto-scaling-adviser",
+		zap.String("desiredTotalResource", clusterTotal.String()))
 
 	return clusterTotal
 }
@@ -65,9 +66,7 @@ func computeQueueDesire(totalPartitionResource *resources.Resource,
 			totalDesire.AddTo(desire)
 		}
 	} else {
-		for name, child := range queue.childrenQueues {
-			log.Logger().Info("compute desire for queue",
-				zap.String("name", name))
+		for _, child := range queue.childrenQueues {
 			computeQueueDesire(totalPartitionResource, child, newHeadroom, queueMaxLimit, totalDesire)
 		}
 	}
