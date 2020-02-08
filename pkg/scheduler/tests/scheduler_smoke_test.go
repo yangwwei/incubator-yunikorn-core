@@ -1582,3 +1582,123 @@ partitions:
 		assert.Assert(t, schedulingNode.GetAllocatedResource().Resources[resources.MEMORY] == 20)
 	}
 }
+
+func TestAutoScalingAdvisor(t *testing.T) {
+	// Start all tests
+	serviceContext := entrypoint.StartAllServicesWithManualScheduler()
+	defer serviceContext.StopAll()
+	proxy := serviceContext.RMProxy
+	scheduler := serviceContext.Scheduler
+
+	// Register RM
+	configData := `
+partitions:
+  -
+    name: default
+    queues:
+      - name: root
+        submitacl: "*"
+        queues:
+          - name: a
+            resources:
+              guaranteed:
+                memory: 10
+              max:
+                memory: 30
+`
+	configs.MockSchedulerConfigByData([]byte(configData))
+	mockRM := NewMockRMCallbackHandler(t)
+
+	_, err := proxy.RegisterResourceManager(
+		&si.RegisterResourceManagerRequest{
+			RmID:        "rm:123",
+			PolicyGroup: "policygroup",
+			Version:     "0.0.2",
+		}, mockRM)
+
+	if err != nil {
+		t.Fatalf("RegisterResourceManager failed: %v", err)
+	}
+
+	// Register a node, and add apps
+	err = proxy.Update(&si.UpdateRequest{
+		NewSchedulableNodes: []*si.NewNodeInfo{
+			{
+				NodeID: "node-1:1234",
+				Attributes: map[string]string{
+					"si.io/hostname": "node-1",
+					"si.io/rackname": "rack-1",
+				},
+				SchedulableResource: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory":  {Value: 10},
+					},
+				},
+			},
+			{
+				NodeID: "node-2:1234",
+				Attributes: map[string]string{
+					"si.io/hostname": "node-2",
+					"si.io/rackname": "rack-1",
+				},
+				SchedulableResource: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory":  {Value: 10},
+					},
+				},
+			},
+		},
+		NewApplications: newAddAppRequest(map[string]string{"app-1": "root.a"}),
+		RmID:            "rm:123",
+	})
+
+	if err != nil {
+		t.Fatalf("UpdateRequest failed: %v", err)
+	}
+
+	waitForAcceptedApplications(mockRM, "app-1", 1000)
+	waitForAcceptedNodes(mockRM, "node-1:1234", 1000)
+	waitForAcceptedNodes(mockRM, "node-2:1234", 1000)
+
+	// Get scheduling app
+	schedulingApp := scheduler.GetClusterSchedulingContext().GetSchedulingApplication("app-1", "[rm:123]default")
+
+	err = proxy.Update(&si.UpdateRequest{
+		Asks: []*si.AllocationAsk{
+			{
+				AllocationKey: "alloc-1",
+				ResourceAsk: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory":  {Value: 10},
+					},
+				},
+				MaxAllocations: 3,
+				ApplicationID:  "app-1",
+			},
+		},
+		RmID: "rm:123",
+	})
+
+	if err != nil {
+		t.Fatalf("UpdateRequest 2 failed: %v", err)
+	}
+
+	// Wait pending resource of queue a and scheduler queue
+	// Both pending memory = 10 * 2 = 20;
+	schedulerQueueRoot := scheduler.GetClusterSchedulingContext().GetSchedulingQueue("root", "[rm:123]default")
+	schedulerQueueA := scheduler.GetClusterSchedulingContext().GetSchedulingQueue("root.a", "[rm:123]default")
+	waitForPendingResource(t, schedulerQueueA, 30, 1000)
+	waitForPendingResource(t, schedulerQueueRoot, 30, 1000)
+	waitForPendingResourceForApplication(t, schedulingApp, 30, 1000)
+
+	scheduler.SingleStepScheduleAllocTest(16)
+	waitForAllocations(mockRM, 2, 1000)
+
+	// Make sure pending resource updated to 0
+	waitForPendingResource(t, schedulerQueueA, 10, 1000)
+	waitForPendingResource(t, schedulerQueueRoot, 10, 1000)
+	waitForPendingResourceForApplication(t, schedulingApp, 10, 1000)
+
+    desire := scheduler.SingleComputeScale()
+    assert.Assert(t, desire.Resources[resources.MEMORY] == 10)
+}
