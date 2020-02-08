@@ -110,6 +110,18 @@ func newSingleAllocationProposal(alloc *SchedulingAllocation) *cacheevent.Alloca
 
 // Internal start scheduling service
 func (m *Scheduler) internalSchedule() {
+	ticker := time.NewTicker(3 * time.Second)
+	go func() {
+		for {
+			select {
+			case t := <-ticker.C:
+				log.Logger().Info("computing scale",
+					zap.Any("@", t))
+				m.computeScale()
+			}
+		}
+	}()
+
 	for {
 		m.singleStepSchedule(16, &preemptionParameters{
 			crossQueuePreemption: false,
