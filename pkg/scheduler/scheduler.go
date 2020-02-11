@@ -130,7 +130,7 @@ func (m *Scheduler) internalSchedule() {
 
 
 		if time.Since(start) > 3 * time.Second {
-			m.computeScale()
+			m.SingleStepComputeScale()
 			start = time.Now()
 		}
 	}

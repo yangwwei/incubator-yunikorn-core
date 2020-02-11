@@ -72,7 +72,7 @@ func startAllServicesWithParameters(opts StartupOptions) *ServiceContext {
 	}
 
 	if opts.startWebAppFlag {
-		webapp := webservice.NewWebApp(cache)
+		webapp := webservice.NewWebApp(cache, scheduler)
 		webapp.StartWebApp()
 		context.WebApp = webapp
 	}

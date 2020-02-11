@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apache/incubator-yunikorn-core/pkg/scheduler"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 
@@ -36,6 +37,7 @@ var gClusterInfo *cache.ClusterInfo
 type WebService struct {
 	httpServer  *http.Server
 	clusterInfo *cache.ClusterInfo
+	scheduler   *scheduler.Scheduler
 	lock        sync.RWMutex
 }
 
@@ -82,9 +84,11 @@ func (m *WebService) StartWebApp() {
 	}()
 }
 
-func NewWebApp(clusterInfo *cache.ClusterInfo) *WebService {
+func NewWebApp(clusterInfo *cache.ClusterInfo, scheduler *scheduler.Scheduler) *WebService {
 	m := &WebService{}
 	gClusterInfo = clusterInfo
+	m.clusterInfo = clusterInfo
+	m.scheduler = scheduler
 	return m
 }
 

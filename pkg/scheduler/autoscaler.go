@@ -19,13 +19,124 @@
 package scheduler
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/apache/incubator-yunikorn-core/pkg/common/resources"
 	"github.com/apache/incubator-yunikorn-core/pkg/log"
 	"go.uber.org/zap"
 )
 
-func (m *Scheduler) SingleComputeScale() *resources.Resource {
-	return m.computeScale()
+var autoScalingCache *cachedResult
+
+type cachedResult struct {
+	result     *autoScalingProposal
+	lastUpdate time.Time
+	synced     bool
+}
+
+type instanceTemplate struct {
+	name             string
+	instanceResource *resources.Resource
+}
+
+type autoScalingProposal struct {
+	scalingResultType
+	numPerType map[string]int32
+}
+
+func (a *cachedResult) absorb(pr *autoScalingProposal) {
+	mergedNum := make(map[string]int32)
+	for temp, num := range a.result.numPerType {
+		if newNum, ok := pr.numPerType[temp]; ok {
+			if newNum > num {
+				// existing num not enough, extending
+				mergedNum[temp] = newNum - num
+				a.synced = false
+			} else {
+				mergedNum[temp] = newNum
+
+			}
+		}
+	}
+}
+
+func (m *Scheduler) SingleStepComputeScale() (*autoScalingProposal, error) {
+	delta := m.computeScale()
+	log.Logger().Info("auto-scaling-adviser",
+		zap.String("desiredTotalResource", delta.String()))
+
+	availableTemplates := []*instanceTemplate{
+		{
+			name: "m5.large",
+			instanceResource: resources.NewResourceFromMap(
+				map[string]resources.Quantity{
+					resources.VCORE:  2000,
+					resources.MEMORY: 8000000}),
+		},
+	}
+
+	result, err := m.computeDesiredDelta(delta, availableTemplates)
+	if err == nil {
+		// logging
+		for _, template := range availableTemplates {
+			log.Logger().Info("computing desired # of nodes",
+				zap.String("desired resource", delta.String()),
+				zap.String("templateName", template.name),
+				zap.String("templateResource", template.instanceResource.String()),
+				zap.Int8("scaleUpOrDown", int8(result.scalingResultType)),
+				zap.Int32("scale#", result.numPerType[template.name]))
+		}
+
+		// update cache
+		if err := updateCache(result); err != nil {
+			log.Logger().Error("unable to update cache", zap.Error(err))
+		} else {
+			// grab whatever in cache and send to external service
+			if err := sendRequest(); err != nil {
+				log.Logger().Error("unable to update cache", zap.Error(err))
+			}
+		}
+	}
+
+	return result, err
+}
+
+func updateCache(update *autoScalingProposal) error {
+	// is this first update
+	if autoScalingCache == nil {
+		autoScalingCache = &cachedResult{
+			result:     update,
+			lastUpdate: time.Now(),
+			synced:     false,
+		}
+	}
+
+	// if there was a result, merge it
+	autoScalingCache.absorb(update)
+
+	return nil
+}
+
+func sendRequest() error {
+
+	return nil
+}
+
+func (m *Scheduler) computeDesiredDelta(deltaResource *resources.Resource,
+	availableInstanceTypes []*instanceTemplate) (result *autoScalingProposal, err error) {
+	// TODO figure out how to resolve bin-packing problem
+	// for now, only assume there is only 1 type
+	if availableInstanceTypes == nil {
+		// skipped
+		return &autoScalingProposal{scalingResultType: noop}, nil
+	}
+
+	if len(availableInstanceTypes) > 1 {
+		return nil, fmt.Errorf("multi-instance-type autoscaling decision not supported yet")
+	}
+
+	return computeDesireNumOfInstances(deltaResource, availableInstanceTypes[0])
 }
 
 func (m *Scheduler) computeScale() *resources.Resource {
@@ -43,9 +154,6 @@ func (m *Scheduler) computeScale() *resources.Resource {
 
 		clusterTotal.AddTo(totalDesire)
 	}
-
-	log.Logger().Info("auto-scaling-adviser",
-		zap.String("desiredTotalResource", clusterTotal.String()))
 
 	return clusterTotal
 }

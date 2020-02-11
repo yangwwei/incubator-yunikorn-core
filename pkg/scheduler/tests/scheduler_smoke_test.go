@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/incubator-yunikorn-core/pkg/log"
+	"go.uber.org/zap"
 	"gotest.tools/assert"
 
 	cacheInfo "github.com/apache/incubator-yunikorn-core/pkg/cache"
@@ -1699,6 +1701,7 @@ partitions:
 	waitForPendingResource(t, schedulerQueueRoot, 10, 1000)
 	waitForPendingResourceForApplication(t, schedulingApp, 10, 1000)
 
-    desire := scheduler.SingleComputeScale()
-    assert.Assert(t, desire.Resources[resources.MEMORY] == 10)
+    res, err := scheduler.SingleStepComputeScale()
+    assert.Assert(t, err == nil)
+    log.Logger().Info("", zap.Any("xxx", res))
 }
