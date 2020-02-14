@@ -84,17 +84,6 @@ func (m *Scheduler) StartService(handlers handler.EventHandlers, manualSchedule 
 	monitor.start()
 
 	if !manualSchedule {
-		// ticker := time.NewTicker(3 * time.Second)
-		// go func() {
-		// 	for {
-		// 		select {
-		// 		case t := <-ticker.C:
-		// 			log.Logger().Info("computing scale",
-		// 				zap.Any("@", t))
-		// 			m.computeScale()
-		// 		}
-		// 	}
-		// }()
 		go m.internalSchedule()
 		go m.internalPreemption()
 	}
@@ -130,7 +119,10 @@ func (m *Scheduler) internalSchedule() {
 
 
 		if time.Since(start) > 3 * time.Second {
-			m.SingleStepComputeScale()
+			if err := m.SingleStepComputeScale(); err != nil {
+				log.Logger().Info("auto-scaling compute failed",
+					zap.Error(err))
+			}
 			start = time.Now()
 		}
 	}

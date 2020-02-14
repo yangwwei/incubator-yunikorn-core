@@ -19,8 +19,11 @@
 package scheduler
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 
 	"github.com/apache/incubator-yunikorn-core/pkg/log"
 	"go.uber.org/zap"
@@ -47,13 +50,13 @@ type NodeRequest struct {
 	NodesPending []string
 }
 
-type httpSender struct {}
+type httpSender struct {
+	endpoint string
+}
 
 func (h httpSender) send(proposal *autoScalingProposal) (map[string]int32, error) {
 	log.Logger().Info("sending proposal",
 		zap.String("proposal", fmt.Sprintf("%v", proposal.desire)))
-
-	// [{"TemplateName":"test","NodeNumber":2,"NodesPending":null}]'
 
 	var requests NodeRequests
 	if proposal != nil {
@@ -72,8 +75,34 @@ func (h httpSender) send(proposal *autoScalingProposal) (map[string]int32, error
 		return nil, err
 	}
 
+	// send request to mk
 	log.Logger().Info("http message",
 		zap.Any("json", fmt.Sprintf("%v", string(message))))
+	resp, sendErr := http.Post(h.endpoint, "application/json", bytes.NewBuffer(message))
+	if sendErr != nil {
+		return nil, sendErr
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Logger().Warn("close http connection failed",
+				zap.Error(err))
+		}
+	}()
 
-	return proposal.desire, nil
+
+	var response NodeRequests
+	jsonBlob, readErr := ioutil.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, readErr
+	}
+
+	err = json.Unmarshal(jsonBlob, &response)
+	log.Logger().Info("http response",
+		zap.Any("json", fmt.Sprintf("%v", string(jsonBlob))))
+	result := make(map[string]int32)
+	for _, item := range response {
+		result[item.TemplateName] = item.NodeNumber
+	}
+
+	return result, nil
 }

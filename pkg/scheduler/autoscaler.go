@@ -47,7 +47,7 @@ func (m *Scheduler) SingleStepComputeScale() error {
 			instanceResource: resources.NewResourceFromMap(
 				map[string]resources.Quantity{
 					resources.VCORE:  2000,
-					resources.MEMORY: 8000000}),
+					resources.MEMORY: 8000}),
 		},
 	}
 
@@ -67,7 +67,7 @@ func (m *Scheduler) SingleStepComputeScale() error {
 			zap.Int32("scale#", proposal.desire[template.name]))
 	}
 
-	if processErr := process(httpSender{}, proposal); processErr != nil {
+	if processErr := process(httpSender{"http://localhost:1311/"}, proposal); processErr != nil {
 		log.Logger().Error("failed to update auto-scaling cache",
 			zap.Error(processErr))
 		return processErr
