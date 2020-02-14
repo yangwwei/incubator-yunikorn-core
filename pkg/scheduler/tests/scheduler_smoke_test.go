@@ -24,8 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/apache/incubator-yunikorn-core/pkg/log"
-	"go.uber.org/zap"
 	"gotest.tools/assert"
 
 	cacheInfo "github.com/apache/incubator-yunikorn-core/pkg/cache"
@@ -1685,8 +1683,6 @@ partitions:
 		t.Fatalf("UpdateRequest 2 failed: %v", err)
 	}
 
-	// Wait pending resource of queue a and scheduler queue
-	// Both pending memory = 10 * 2 = 20;
 	schedulerQueueRoot := scheduler.GetClusterSchedulingContext().GetSchedulingQueue("root", "[rm:123]default")
 	schedulerQueueA := scheduler.GetClusterSchedulingContext().GetSchedulingQueue("root.a", "[rm:123]default")
 	waitForPendingResource(t, schedulerQueueA, 30, 1000)
@@ -1695,13 +1691,46 @@ partitions:
 
 	scheduler.SingleStepScheduleAllocTest(16)
 	waitForAllocations(mockRM, 2, 1000)
-
-	// Make sure pending resource updated to 0
 	waitForPendingResource(t, schedulerQueueA, 10, 1000)
 	waitForPendingResource(t, schedulerQueueRoot, 10, 1000)
 	waitForPendingResourceForApplication(t, schedulingApp, 10, 1000)
 
-    res, err := scheduler.SingleStepComputeScale()
+    err = scheduler.SingleStepComputeScale()
     assert.Assert(t, err == nil)
-    log.Logger().Info("", zap.Any("xxx", res))
+	err = scheduler.SingleStepComputeScale()
+	assert.Assert(t, err == nil)
+
+	// register 1 new node
+	// Register a node, and add apps
+	err = proxy.Update(&si.UpdateRequest{
+		NewSchedulableNodes: []*si.NewNodeInfo{
+			{
+				NodeID: "node-3:1234",
+				Attributes: map[string]string{
+					"si.io/hostname": "node-3",
+					"si.io/rackname": "rack-1",
+				},
+				SchedulableResource: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory":  {Value: 10},
+					},
+				},
+			},
+		},
+		RmID:            "rm:123",
+	})
+
+	if err != nil {
+		t.Fatalf("UpdateRequest failed: %v", err)
+	}
+
+	waitForAcceptedNodes(mockRM, "node-3:1234", 1000)
+	scheduler.SingleStepScheduleAllocTest(16)
+	waitForAllocations(mockRM, 3, 1000)
+	waitForPendingResource(t, schedulerQueueA, 0, 1000)
+	waitForPendingResource(t, schedulerQueueRoot, 0, 1000)
+	waitForPendingResourceForApplication(t, schedulingApp, 0, 1000)
+
+	err = scheduler.SingleStepComputeScale()
+	assert.Assert(t, err == nil)
 }

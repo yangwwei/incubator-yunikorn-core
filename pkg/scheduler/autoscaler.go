@@ -20,20 +20,12 @@ package scheduler
 
 import (
 	"fmt"
-	"time"
+	"math"
 
 	"github.com/apache/incubator-yunikorn-core/pkg/common/resources"
 	"github.com/apache/incubator-yunikorn-core/pkg/log"
 	"go.uber.org/zap"
 )
-
-var autoScalingCache *cachedResult
-
-type cachedResult struct {
-	result     *autoScalingProposal
-	lastUpdate time.Time
-	synced     bool
-}
 
 type instanceTemplate struct {
 	name             string
@@ -41,27 +33,10 @@ type instanceTemplate struct {
 }
 
 type autoScalingProposal struct {
-	scalingResultType
-	numPerType map[string]int32
+	desire map[string]int32
 }
 
-func (a *cachedResult) absorb(pr *autoScalingProposal) {
-	mergedNum := make(map[string]int32)
-	for temp, num := range a.result.numPerType {
-		if newNum, ok := pr.numPerType[temp]; ok {
-			if newNum > num {
-				// existing num not enough, extending
-				mergedNum[temp] = newNum - num
-				a.synced = false
-			} else {
-				mergedNum[temp] = newNum
-
-			}
-		}
-	}
-}
-
-func (m *Scheduler) SingleStepComputeScale() (*autoScalingProposal, error) {
+func (m *Scheduler) SingleStepComputeScale() error {
 	delta := m.computeScale()
 	log.Logger().Info("auto-scaling-adviser",
 		zap.String("desiredTotalResource", delta.String()))
@@ -76,60 +51,41 @@ func (m *Scheduler) SingleStepComputeScale() (*autoScalingProposal, error) {
 		},
 	}
 
-	result, err := m.computeDesiredDelta(delta, availableTemplates)
-	if err == nil {
-		// logging
-		for _, template := range availableTemplates {
-			log.Logger().Info("computing desired # of nodes",
-				zap.String("desired resource", delta.String()),
-				zap.String("templateName", template.name),
-				zap.String("templateResource", template.instanceResource.String()),
-				zap.Int8("scaleUpOrDown", int8(result.scalingResultType)),
-				zap.Int32("scale#", result.numPerType[template.name]))
-		}
-
-		// update cache
-		if err := updateCache(result); err != nil {
-			log.Logger().Error("unable to update cache", zap.Error(err))
-		} else {
-			// grab whatever in cache and send to external service
-			if err := sendRequest(); err != nil {
-				log.Logger().Error("unable to update cache", zap.Error(err))
-			}
-		}
+	proposal, err := m.generateAutoScalingProposal(delta, availableTemplates)
+	if err != nil {
+		log.Logger().Info("failed to general auto scaling proposal",
+			zap.Error(err))
+		return err
 	}
 
-	return result, err
-}
-
-func updateCache(update *autoScalingProposal) error {
-	// is this first update
-	if autoScalingCache == nil {
-		autoScalingCache = &cachedResult{
-			result:     update,
-			lastUpdate: time.Now(),
-			synced:     false,
-		}
+	for _, template := range availableTemplates {
+		log.Logger().Info("computing desired # of nodes",
+			zap.String("desiredResource", delta.String()),
+			zap.String("templateName", template.name),
+			zap.String("templateResource", template.instanceResource.String()),
+			zap.Int8("desiredNodes", int8(proposal.desire[template.name])),
+			zap.Int32("scale#", proposal.desire[template.name]))
 	}
 
-	// if there was a result, merge it
-	autoScalingCache.absorb(update)
+	if processErr := process(httpSender{}, proposal); processErr != nil {
+		log.Logger().Error("failed to update auto-scaling cache",
+			zap.Error(processErr))
+		return processErr
+	}
+
+	log.Logger().Info("auto-scaling-adviser",
+		zap.String("state", "compute-finished"),
+		zap.String("cache(desiredNodes)", fmt.Sprintf("%v", internalCache.nodes)))
 
 	return nil
 }
 
-func sendRequest() error {
-
-	return nil
-}
-
-func (m *Scheduler) computeDesiredDelta(deltaResource *resources.Resource,
+func (m *Scheduler) generateAutoScalingProposal(deltaResource *resources.Resource,
 	availableInstanceTypes []*instanceTemplate) (result *autoScalingProposal, err error) {
 	// TODO figure out how to resolve bin-packing problem
 	// for now, only assume there is only 1 type
 	if availableInstanceTypes == nil {
-		// skipped
-		return &autoScalingProposal{scalingResultType: noop}, nil
+		return &autoScalingProposal{}, nil
 	}
 
 	if len(availableInstanceTypes) > 1 {
@@ -178,4 +134,32 @@ func computeQueueDesire(totalPartitionResource *resources.Resource,
 			computeQueueDesire(totalPartitionResource, child, newHeadroom, queueMaxLimit, totalDesire)
 		}
 	}
+}
+
+func computeDesireNumOfInstances(desire *resources.Resource,
+	template *instanceTemplate) (*autoScalingProposal, error) {
+	// sanity checks
+	// make sure all resource types can be found in this template
+	for resourceName := range desire.Resources {
+		if _, ok := template.instanceResource.Resources[resourceName]; !ok {
+			return nil, fmt.Errorf("resource type %s is not found in instance type %s",
+				resourceName, template.name)
+		}
+	}
+
+	// how many more this kind of instances in minimal is needed to fit this resource?
+	num := int32(0)
+	asProposal := &autoScalingProposal{
+		desire: make(map[string]int32),
+	}
+	for resourceName, value := range desire.Resources {
+		nodeResource := template.instanceResource.Resources[resourceName]
+		desireNum := int32(math.Ceil(float64(value) / float64(nodeResource)))
+		if desireNum > num {
+			num = desireNum
+		}
+	}
+
+	asProposal.desire[template.name] = num
+	return asProposal, nil
 }
