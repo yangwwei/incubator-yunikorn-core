@@ -43,7 +43,7 @@ func (m *Scheduler) SingleStepComputeScale() error {
 
 	availableTemplates := []*instanceTemplate{
 		{
-			name: "m5.large",
+			name: "", // x5.large
 			instanceResource: resources.NewResourceFromMap(
 				map[string]resources.Quantity{
 					resources.VCORE:  2000,
