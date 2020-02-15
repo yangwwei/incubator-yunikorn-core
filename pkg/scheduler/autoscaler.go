@@ -40,6 +40,9 @@ func (m *Scheduler) SingleStepComputeScale() error {
 	delta := m.computeScale()
 	log.Logger().Info("auto-scaling-adviser",
 		zap.String("desiredTotalResource", delta.String()))
+	if !resources.StrictlyGreaterThan(delta, resources.Zero) {
+		return nil
+	}
 
 	availableTemplates := []*instanceTemplate{
 		{
