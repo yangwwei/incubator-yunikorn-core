@@ -47,6 +47,10 @@ func (s *Scheduler) triggerAutoScaleIfNecessary() {
 		outstandingRequests := make([]*si.OutstandingResourceRequest, 0)
 		for _, p := range s.clusterSchedulingContext.partitions {
 			for _, app := range p.applications {
+				log.Logger().Debug("inspect app",
+					zap.String("appID", app.ApplicationInfo.ApplicationID),
+					zap.Int("totalRequestsLen", len(app.requests)),
+					zap.Int("outstandingRequestLen", len(app.outstandingRequests)))
 				for _, req := range app.outstandingRequests {
 					log.Logger().Debug("outstanding request",
 						zap.String("RequestID", req.AskProto.AllocationKey),
