@@ -99,6 +99,7 @@ func newSingleAllocationProposal(alloc *schedulingAllocation) *cacheevent.Alloca
 func (s *Scheduler) internalSchedule() {
 	for {
 		s.schedule()
+		s.triggerAutoScaleIfNecessary()
 	}
 }
 

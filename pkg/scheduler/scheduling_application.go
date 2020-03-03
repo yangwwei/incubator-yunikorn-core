@@ -46,6 +46,7 @@ type SchedulingApplication struct {
 	reservations   map[string]*reservation             // a map of reservations
 	requests       map[string]*schedulingAllocationAsk // a map of asks
 	sortedRequests []*schedulingAllocationAsk
+	outstandingRequests map[string]*schedulingAllocationAsk
 
 	sync.RWMutex
 }
@@ -56,6 +57,7 @@ func newSchedulingApplication(appInfo *cache.ApplicationInfo) *SchedulingApplica
 		allocating:      resources.NewResource(),
 		pending:         resources.NewResource(),
 		requests:        make(map[string]*schedulingAllocationAsk),
+		outstandingRequests: make(map[string]*schedulingAllocationAsk),
 		reservations:    make(map[string]*reservation),
 	}
 }
@@ -163,6 +165,7 @@ func (sa *SchedulingApplication) removeAllocationAsk(allocKey string) int {
 		deltaPendingResource = sa.pending
 		sa.pending = resources.NewResource()
 		sa.requests = make(map[string]*schedulingAllocationAsk)
+		sa.outstandingRequests = make(map[string]*schedulingAllocationAsk)
 	} else {
 		// cleanup the reservation for this allocation
 		for _, key := range sa.isAskReserved(allocKey) {
@@ -181,6 +184,7 @@ func (sa *SchedulingApplication) removeAllocationAsk(allocKey string) int {
 			deltaPendingResource = resources.MultiplyBy(ask.AllocatedResource, float64(ask.getPendingAskRepeat()))
 			sa.pending.SubFrom(deltaPendingResource)
 			delete(sa.requests, allocKey)
+			delete(sa.outstandingRequests, allocKey)
 		}
 	}
 	// clean up the queue pending resources
@@ -399,9 +403,16 @@ func (sa *SchedulingApplication) tryAllocate(headRoom *resources.Resource, ctx *
 			alloc := sa.tryNodes(request, nodeIterator)
 			// have a candidate return it
 			if alloc != nil {
+				// remove from outstanding request
+				delete(sa.outstandingRequests, request.AskProto.AllocationKey)
 				return alloc
 			}
 		}
+
+		// we have headroom, tried all nodes but still could not find spot
+		// mark this request as outstanding and it can be used as a factor
+		// for auto-scaling
+		sa.outstandingRequests[request.AskProto.AllocationKey] = request
 	}
 	// no requests fit, skip to next app
 	return nil
