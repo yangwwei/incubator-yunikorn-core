@@ -82,6 +82,16 @@ func (sa *SchedulingApplication) GetReservations() []string {
 	return keys
 }
 
+func (sa *SchedulingApplication) GetOutstandingRequests() []string {
+	sa.RLock()
+	defer sa.RUnlock()
+	keys := make([]string, 0)
+	for key := range sa.outstandingRequests {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 // Return the allocation ask for the key, nil if not found
 func (sa *SchedulingApplication) GetSchedulingAllocationAsk(allocationKey string) *schedulingAllocationAsk {
 	sa.RLock()
@@ -183,8 +193,9 @@ func (sa *SchedulingApplication) removeAllocationAsk(allocKey string) int {
 		if ask := sa.requests[allocKey]; ask != nil {
 			deltaPendingResource = resources.MultiplyBy(ask.AllocatedResource, float64(ask.getPendingAskRepeat()))
 			sa.pending.SubFrom(deltaPendingResource)
+			sa.removeOutstandingRequest(allocKey)
 			delete(sa.requests, allocKey)
-			delete(sa.outstandingRequests, allocKey)
+
 		}
 	}
 	// clean up the queue pending resources
@@ -397,6 +408,14 @@ func (sa *SchedulingApplication) tryAllocate(headRoom *resources.Resource, ctx *
 	for _, request := range sa.sortedRequests {
 		// resource must fit in headroom otherwise skip the request
 		if !resources.FitIn(headRoom, request.AllocatedResource) {
+			// TODO improve this
+			// we don't have headroom, there might be two cases
+			// first, the queue resource is not enough for this request;
+			// second, the partition resource is not enough;
+			// for 1st case, we may not need to trigger auto-scaling,
+			// but this one should be rare (when do namespace-queue mapping)
+			// for simplicity, lets trigger for both cases
+			sa.addOutstandingRequest(request)
 			continue
 		}
 		if nodeIterator := ctx.getNodeIterator(); nodeIterator != nil {
@@ -404,18 +423,28 @@ func (sa *SchedulingApplication) tryAllocate(headRoom *resources.Resource, ctx *
 			// have a candidate return it
 			if alloc != nil {
 				// remove from outstanding request
-				delete(sa.outstandingRequests, request.AskProto.AllocationKey)
+				sa.removeOutstandingRequest(request.AskProto.AllocationKey)
 				return alloc
 			}
 		}
 
-		// we have headroom, tried all nodes but still could not find spot
+		// we have headroom, tried all nodes but still could not find a spot
 		// mark this request as outstanding and it can be used as a factor
 		// for auto-scaling
-		sa.outstandingRequests[request.AskProto.AllocationKey] = request
+		sa.addOutstandingRequest(request)
 	}
 	// no requests fit, skip to next app
 	return nil
+}
+
+func (sa *SchedulingApplication) addOutstandingRequest(request *schedulingAllocationAsk) {
+	sa.outstandingRequests[request.AskProto.AllocationKey] = request
+}
+
+func (sa *SchedulingApplication) removeOutstandingRequest(allocKey string) {
+	if _, exist := sa.outstandingRequests[allocKey]; exist {
+		delete(sa.outstandingRequests, allocKey)
+	}
 }
 
 // Try a reserved allocation of an outstanding reservation

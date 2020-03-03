@@ -44,27 +44,7 @@ func (s *Scheduler) triggerAutoScaleIfNecessary() {
 
 	if time.Since(autoScaleLastRunTime) > 3 * time.Second {
 		log.Logger().Info("running auto-scale adviser")
-		outstandingRequests := make([]*si.OutstandingResourceRequest, 0)
-		for _, p := range s.clusterSchedulingContext.partitions {
-			for _, app := range p.applications {
-				log.Logger().Debug("inspect app",
-					zap.String("appID", app.ApplicationInfo.ApplicationID),
-					zap.Int("totalRequestsLen", len(app.requests)),
-					zap.Int("outstandingRequestLen", len(app.outstandingRequests)))
-				for _, req := range app.outstandingRequests {
-					log.Logger().Debug("outstanding request",
-						zap.String("RequestID", req.AskProto.AllocationKey),
-						zap.String("Resource", req.AskProto.ResourceAsk.String()),
-						zap.Any("Tags", req.AskProto.Tags))
-					outstandingRequests = append(outstandingRequests, &si.OutstandingResourceRequest{
-						RequestID:            req.AskProto.AllocationKey,
-						Resource:             req.AskProto.ResourceAsk,
-						Tags:                 req.AskProto.Tags,
-					})
-				}
-			}
-		}
-
+		outstandingRequests := s.AggregateOutstandingRequestsForAutoScale()
 		if len(outstandingRequests) > 0 {
 			log.Logger().Info("outstanding requests",
 				zap.Int("size", len(outstandingRequests)))
@@ -78,4 +58,29 @@ func (s *Scheduler) triggerAutoScaleIfNecessary() {
 
 		autoScaleLastRunTime = time.Now()
 	}
+}
+
+// exported for testing
+func (s *Scheduler) AggregateOutstandingRequestsForAutoScale() []*si.OutstandingResourceRequest {
+	outstandingRequests := make([]*si.OutstandingResourceRequest, 0)
+	for _, p := range s.clusterSchedulingContext.partitions {
+		for _, app := range p.applications {
+			log.Logger().Debug("inspect app",
+				zap.String("appID", app.ApplicationInfo.ApplicationID),
+				zap.Int("totalRequestsLen", len(app.requests)),
+				zap.Int("outstandingRequestLen", len(app.outstandingRequests)))
+			for _, req := range app.outstandingRequests {
+				log.Logger().Debug("outstanding request",
+					zap.String("RequestID", req.AskProto.AllocationKey),
+					zap.String("Resource", req.AskProto.ResourceAsk.String()),
+					zap.Any("Tags", req.AskProto.Tags))
+				outstandingRequests = append(outstandingRequests, &si.OutstandingResourceRequest{
+					RequestID:            req.AskProto.AllocationKey,
+					Resource:             req.AskProto.ResourceAsk,
+					Tags:                 req.AskProto.Tags,
+				})
+			}
+		}
+	}
+	return outstandingRequests
 }

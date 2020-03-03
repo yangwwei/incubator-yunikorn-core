@@ -1426,3 +1426,166 @@ partitions:
 		assert.Assert(t, schedulingNode.GetAllocatedResource().Resources[resources.MEMORY] == 20)
 	}
 }
+
+func TestAutoScalingAdviser(t *testing.T) {
+	configData := `
+partitions:
+  -
+    name: default
+    queues:
+      - name: root
+        submitacl: "*"
+        queues:
+          - name: a
+            resources:
+              guaranteed:
+                memory: 10
+              max:
+                memory: 30
+`
+	// Start all tests
+	ms := &mockScheduler{}
+	defer ms.Stop()
+
+	err := ms.Init(configData, false)
+	if err != nil {
+		t.Fatalf("RegisterResourceManager failed: %v", err)
+	}
+
+	// Register a node, and add apps
+	err = ms.proxy.Update(&si.UpdateRequest{
+		NewSchedulableNodes: []*si.NewNodeInfo{
+			{
+				NodeID: "node-1:1234",
+				Attributes: map[string]string{
+					"si.io/hostname": "node-1",
+					"si.io/rackname": "rack-1",
+				},
+				SchedulableResource: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory":  {Value: 10},
+					},
+				},
+			},
+			{
+				NodeID: "node-2:1234",
+				Attributes: map[string]string{
+					"si.io/hostname": "node-2",
+					"si.io/rackname": "rack-1",
+				},
+				SchedulableResource: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory":  {Value: 10},
+					},
+				},
+			},
+		},
+		NewApplications: newAddAppRequest(map[string]string{"app-1": "root.a"}),
+		RmID:            "rm:123",
+	})
+
+	if err != nil {
+		t.Fatalf("UpdateRequest failed: %v", err)
+	}
+
+	ms.mockRM.waitForAcceptedApplication(t, "app-1", 3000)
+	ms.mockRM.waitForAcceptedNode(t, "node-1:1234", 3000)
+	ms.mockRM.waitForAcceptedNode(t, "node-2:1234", 3000)
+
+	// Get scheduling app
+	schedulingApp := ms.scheduler.GetClusterSchedulingContext().
+		GetSchedulingApplication("app-1", "[rm:123]default")
+
+	err = ms.proxy.Update(&si.UpdateRequest{
+		Asks: []*si.AllocationAsk{
+			{
+				AllocationKey: "alloc-1",
+				ResourceAsk: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory": {Value: 10},
+					},
+				},
+				MaxAllocations: 1,
+				ApplicationID:  "app-1",
+			},
+			{
+				AllocationKey: "alloc-2",
+				ResourceAsk: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory": {Value: 10},
+					},
+				},
+				MaxAllocations: 1,
+				ApplicationID:  "app-1",
+			},
+			{
+				AllocationKey: "alloc-3",
+				ResourceAsk: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory": {Value: 10},
+					},
+				},
+				MaxAllocations: 1,
+				ApplicationID:  "app-1",
+			},
+		},
+		RmID: "rm:123",
+	})
+
+	if err != nil {
+		t.Fatalf("UpdateRequest 2 failed: %v", err)
+	}
+
+	schedulerQueueRoot := ms.scheduler.GetClusterSchedulingContext().
+		GetSchedulingQueue("root", "[rm:123]default")
+	schedulerQueueA := ms.scheduler.GetClusterSchedulingContext().
+		GetSchedulingQueue("root.a", "[rm:123]default")
+
+	waitForPendingQueueResource(t, schedulerQueueA, 30, 3000)
+	waitForPendingQueueResource(t, schedulerQueueRoot, 30, 3000)
+	waitForPendingAppResource(t, schedulingApp, 30, 3000)
+
+	ms.scheduler.MultiStepSchedule(16)
+	ms.mockRM.waitForAllocations(t, 2, 3000)
+
+	outstandingRequests := ms.scheduler.AggregateOutstandingRequestsForAutoScale()
+	assert.Equal(t, len(outstandingRequests), 1)
+
+	waitForPendingQueueResource(t, schedulerQueueA, 10, 3000)
+	waitForPendingQueueResource(t, schedulerQueueRoot, 10, 3000)
+	waitForPendingAppResource(t, schedulingApp, 10, 3000)
+
+	// there should be 1 outstanding request
+	assert.Equal(t, len(schedulingApp.GetOutstandingRequests()), 1)
+
+	// register 1 new node
+	// Register a node, and add apps
+	err = ms.proxy.Update(&si.UpdateRequest{
+		NewSchedulableNodes: []*si.NewNodeInfo{
+			{
+				NodeID: "node-3:1234",
+				Attributes: map[string]string{
+					"si.io/hostname": "node-3",
+					"si.io/rackname": "rack-1",
+				},
+				SchedulableResource: &si.Resource{
+					Resources: map[string]*si.Quantity{
+						"memory": {Value: 10},
+					},
+				},
+			},
+		},
+		RmID: "rm:123",
+	})
+
+	if err != nil {
+		t.Fatalf("UpdateRequest failed: %v", err)
+	}
+
+	ms.scheduler.MultiStepSchedule(16)
+	ms.mockRM.waitForAllocations(t, 3, 3000)
+
+	waitForPendingQueueResource(t, schedulerQueueA, 0, 3000)
+	waitForPendingQueueResource(t, schedulerQueueRoot, 0, 3000)
+	waitForPendingAppResource(t, schedulingApp, 0, 3000)
+}
