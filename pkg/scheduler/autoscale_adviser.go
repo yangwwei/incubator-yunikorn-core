@@ -71,5 +71,7 @@ func (s *Scheduler) triggerAutoScaleIfNecessary() {
 					zap.Error(err))
 			}
 		}
+
+		autoScaleLastRunTime = time.Now()
 	}
 }
