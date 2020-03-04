@@ -566,7 +566,6 @@ func (s *Scheduler) schedule() {
 					app.addOutstandingRequest(req)
 				}
 			}
-			log.Logger().Debug("skip scheduling because root queue has no resources")
 			continue
 		}
 		// try reservations first: gets back a node ID if the allocation occurs on a node
