@@ -559,10 +559,16 @@ func (s *Scheduler) schedule() {
 	// schedule each partition defined in the cluster
 	for _, psc := range s.clusterSchedulingContext.getPartitionMapClone() {
 		// if there are no resources in the partition just skip
-		// if psc.root.getMaxResource() == nil {
-		// 	log.Logger().Debug("skip scheduling because root queue has no resources")
-		// 	continue
-		// }
+		if psc.root.getMaxResource() == nil {
+			// if root has no resource, all requests become to be outstanding
+			for _, app := range psc.applications {
+				for _, req := range app.requests {
+					app.addOutstandingRequest(req)
+				}
+			}
+			log.Logger().Debug("skip scheduling because root queue has no resources")
+			continue
+		}
 		// try reservations first: gets back a node ID if the allocation occurs on a node
 		// that was not reserved by the app/ask
 		alloc := psc.tryReservedAllocate()
