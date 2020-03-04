@@ -494,6 +494,8 @@ func (sq *SchedulingQueue) tryAllocate(ctx *partitionSchedulingContext) *schedul
 	if sq.isLeafQueue() {
 		// get the headroom
 		headRoom := sq.getHeadRoom()
+		log.Logger().Info("### headroom",
+			zap.String("headroom", headRoom.String()))
 		// process the apps (filters out app without pending requests)
 		for _, app := range sq.sortApplications() {
 			alloc := app.tryAllocate(headRoom, ctx)

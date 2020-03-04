@@ -406,8 +406,13 @@ func (sa *SchedulingApplication) tryAllocate(headRoom *resources.Resource, ctx *
 	sa.sortRequests(false)
 	// get all the requests from the app sorted in order
 	for _, request := range sa.sortedRequests {
+		log.Logger().Info("### try to allocate",
+			zap.String("key", request.AskProto.AllocationKey))
 		// resource must fit in headroom otherwise skip the request
 		if !resources.FitIn(headRoom, request.AllocatedResource) {
+			log.Logger().Info("#### failed to allocate",
+				zap.String("key", request.AskProto.AllocationKey),
+				zap.String("headRoom full", headRoom.String()))
 			// TODO improve this
 			// we don't have headroom, there might be two cases
 			// first, the queue resource is not enough for this request;

@@ -575,7 +575,13 @@ func (s *Scheduler) schedule() {
 			// proposal this will return to the scheduler an SchedulerApplicationsUpdateEvent when the
 			// is processed by the cache (this can be a reject or accept)
 			// nodeID is an empty string in all but reserved alloc cases
+			log.Logger().Info("###",
+				zap.String("state", alloc.result.String()),
+				zap.String("allocKey", alloc.schedulingAsk.AskProto.AllocationKey))
 			if psc.allocate(alloc) {
+				log.Logger().Info("### notifying cache to sync up",
+					zap.String("state", alloc.result.String()),
+					zap.String("allocKey", alloc.schedulingAsk.AskProto.AllocationKey))
 				s.eventHandlers.CacheEventHandler.HandleEvent(newSingleAllocationProposal(alloc))
 			}
 		}
