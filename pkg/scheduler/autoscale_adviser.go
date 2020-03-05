@@ -34,7 +34,7 @@ var once sync.Once
 func (s *Scheduler) triggerAutoScaleIfNecessary() {
 	once.Do(func() {
 		metricsSender = &httpSender{
-			endpoint:"http://localhost:1311",
+			endpoint:"http://localhost:1311/yunikorn",
 		}
 	})
 
